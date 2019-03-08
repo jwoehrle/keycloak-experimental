@@ -32,6 +32,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.twilio.sdk</groupId>
+            <artifactId>twilio</artifactId>
+            <version>7.36.0</version>
+        </dependency>
+        <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-core</artifactId>
             <version>${version.keycloak}</version>
@@ -61,6 +66,32 @@
         <finalName>magic-link</finalName>
 
         <plugins>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.2.1</version>
+                    <executions>
+                        <execution>
+                            <phase>package</phase>
+                            <goals>
+                                <goal>shade</goal>
+                            </goals>
+                            <configuration>
+                                <artifactSet>
+                                    <excludes>
+                                        <exclude>classworlds:classworlds</exclude>
+                                        <exclude>junit:junit</exclude>
+                                        <exclude>jmock:*</exclude>
+                                        <exclude>*:xml-apis</exclude>
+                                        <exclude>org.apache.maven:lib:tests</exclude>
+                                    </excludes>
+                                </artifactSet>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

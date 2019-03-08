@@ -17,6 +17,9 @@
 
 package org.keycloak.experimental.magic;
 
+import com.twilio.Twilio;
+import com.twilio.rest.api.v2010.account.Message;
+import com.twilio.type.PhoneNumber;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
@@ -29,20 +32,52 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
+import java.net.URI;
+import java.security.SecureRandom;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
-public class MagicLinkFormAuthenticator extends AbstractUsernameFormAuthenticator implements Authenticator {
+public class MagicLinkFormAuthenticator /*extends AbstractUsernameFormAuthenticator*/ implements Authenticator {
+
+    @Override
+    public void authenticate(AuthenticationFlowContext context) {
+//        String expectedEmailKey = context.getAuthenticationSession().getAuthNote("email-key");
+        String expectedEmailKey = context.getAuthenticationSession().getAuthNote("sms-key");
+        if (expectedEmailKey != null) {
+            String requestKey = context.getHttpRequest().getUri().getQueryParameters().getFirst("sms-key");
+            if (requestKey == null ) {
+                requestKey = context.getHttpRequest().getDecodedFormParameters().getFirst("sms-key");
+            }
+            if (requestKey != null) {
+                if (requestKey.equals(expectedEmailKey)) {
+                    context.success();
+                } else {
+                    context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
+                }
+            } else {
+                context.challenge(context.form().createForm("login-sms-code.ftl"));
+                // TODO add possibiliy to reset code
+            }
+        } else {
+            context.challenge(context.form().createForm("login-email-only.ftl"));
+        }
+    }
 
     @Override
     public void action(AuthenticationFlowContext context) {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         String email = formData.getFirst("email");
+        UserModel user;
+        if ( email != null ) {
+            user = context.getSession().users().getUserByEmail(email, context.getRealm());
+        } else {
+            user = context.getUser();
+        }
 
-        UserModel user = context.getSession().users().getUserByEmail(email, context.getRealm());
         if (user == null) {
             // Register user
             user = context.getSession().users().addUser(context.getRealm(), email);
@@ -54,10 +89,17 @@ public class MagicLinkFormAuthenticator extends AbstractUsernameFormAuthenticato
         }
 
         String key = KeycloakModelUtils.generateId();
-        context.getAuthenticationSession().setAuthNote("email-key", key);
+        //context.getAuthenticationSession().setAuthNote("email-key", key);
+        int randomInt = new SecureRandom().nextInt(1000000);
+        String smsCode = String.format("%06d", randomInt);
+        context.getAuthenticationSession().setAuthNote("sms-key", smsCode);
 
-        String link = KeycloakUriBuilder.fromUri(context.getRefreshExecutionUrl()).queryParam("key", key).build().toString();
-        String body = "<a href=\"" + link + "\">Click to login</a>";
+        //sendSMS(smsCode);
+
+
+        String link = KeycloakUriBuilder.fromUri(context.getRefreshExecutionUrl()).queryParam("key", key).queryParam("sms-key", smsCode).build().toString();
+
+        String body = "<a href=\"" + link + "\">Click to login</a><br/><p>Your code is "  + smsCode + "</p>";
         try {
             context.getSession().getProvider(EmailSenderProvider.class).send(context.getRealm().getSmtpConfig(), user, "Login link", null, body);
         } catch (EmailException e) {
@@ -65,26 +107,21 @@ public class MagicLinkFormAuthenticator extends AbstractUsernameFormAuthenticato
         }
 
         context.setUser(user);
-        context.challenge(context.form().createForm("view-email.ftl"));
+        context.challenge(context.form().createForm("login-sms-code.ftl"));
     }
 
-    @Override
-    public void authenticate(AuthenticationFlowContext context) {
-        String sessionKey = context.getAuthenticationSession().getAuthNote("email-key");
-        if (sessionKey != null) {
-            String requestKey = context.getHttpRequest().getUri().getQueryParameters().getFirst("key");
-            if (requestKey != null) {
-                if (requestKey.equals(sessionKey)) {
-                    context.success();
-                } else {
-                    context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
-                }
-            } else {
-                context.challenge(context.form().createForm("view-email.ftl"));
-            }
-        } else {
-            context.challenge(context.form().createForm("login-email-only.ftl"));
-        }
+    private void sendSMS(String smsCode) {
+        String twilioUser = System.getenv("TWILIO_USER");
+        String twilioPassword = System.getenv("TWILIO_PASSWORD");
+        // TODO make this dynamic
+        String toNumber = System.getenv("TWILIO_TO");
+        String fromNumber = System.getenv("TWILIO_FROM");
+        Twilio.init(twilioUser, twilioPassword);
+        Message sms = Message
+                .creator(new PhoneNumber(toNumber), // to
+                        new PhoneNumber(fromNumber), // from
+                        "Your code: " + smsCode)
+                .create();
     }
 
     @Override
@@ -104,5 +141,7 @@ public class MagicLinkFormAuthenticator extends AbstractUsernameFormAuthenticato
     @Override
     public void close() {
     }
+
+
 
 }

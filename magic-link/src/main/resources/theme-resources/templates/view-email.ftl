@@ -6,7 +6,7 @@
         ${msg("loginTitleHtml",(realm.displayNameHtml!''))?no_esc}
     <#elseif section = "form">
         <#if realm.password>
-            View email
+            A magic link has been sent to your email address.
         </#if>
     </#if>
 </@layout.registrationLayout>

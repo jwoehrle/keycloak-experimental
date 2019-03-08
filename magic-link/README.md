@@ -22,3 +22,12 @@ Screencast available here: https://youtu.be/oyUsI3QgEq8
    * Add "Magic Link"
    * Set requirement "Required" on "Magic Link" executor
    * Click on bindings and switch "Browser flow" to "Copy of browser flow" 
+
+
+
+run in docker:
+`docker run -d --name keycloak -p 8080:8080 -p 8787:8787 -e KEYCLOAK_USER=admin -e KEYCLOAK_PASSWORD=admin -e DEBUG=true jboss/keycloak`
+
+deploy SPI:
+`docker cp target/magic-link.jar keycloak:/opt/jboss/keycloak/standalone/deployments`
+
