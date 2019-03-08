@@ -45,23 +45,10 @@ public class MagicLinkFormAuthenticator /*extends AbstractUsernameFormAuthentica
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
-//        String expectedEmailKey = context.getAuthenticationSession().getAuthNote("email-key");
-        String expectedEmailKey = context.getAuthenticationSession().getAuthNote("sms-key");
+        String expectedEmailKey = context.getAuthenticationSession().getAuthNote("loginCode");
         if (expectedEmailKey != null) {
-            String requestKey = context.getHttpRequest().getUri().getQueryParameters().getFirst("sms-key");
-            if (requestKey == null ) {
-                requestKey = context.getHttpRequest().getDecodedFormParameters().getFirst("sms-key");
-            }
-            if (requestKey != null) {
-                if (requestKey.equals(expectedEmailKey)) {
-                    context.success();
-                } else {
-                    context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
-                }
-            } else {
-                context.challenge(context.form().createForm("login-sms-code.ftl"));
-                // TODO add possibiliy to reset code
-            }
+            String requestKey = context.getHttpRequest().getUri().getQueryParameters().getFirst("loginCode");
+            verifyCode(context, requestKey);
         } else {
             context.challenge(context.form().createForm("login-email-only.ftl"));
         }
@@ -70,44 +57,59 @@ public class MagicLinkFormAuthenticator /*extends AbstractUsernameFormAuthentica
     @Override
     public void action(AuthenticationFlowContext context) {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
-        String email = formData.getFirst("email");
-        UserModel user;
-        if ( email != null ) {
-            user = context.getSession().users().getUserByEmail(email, context.getRealm());
+        if (formData.containsKey("form-type")) {
+            String type = formData.getFirst("form-type");
+            if ("SMS_LOGIN".equals(type)) {
+                verifyCode(context, formData.getFirst("loginCode"));
+            } else if ("USERNAME".equals(type)) {
+                createAndSendCode(context, formData);
+            } else {
+                context.failure(AuthenticationFlowError.INVALID_CLIENT_SESSION);
+            }
         } else {
-            user = context.getUser();
+            context.failure(AuthenticationFlowError.CREDENTIAL_SETUP_REQUIRED);
         }
+
+
+    }
+
+    private void verifyCode(AuthenticationFlowContext context, String code) {
+        String expectedCode = context.getAuthenticationSession().getAuthNote("loginCode");
+        if (expectedCode != null) {
+            if (expectedCode.equals(code)) {
+                context.success();
+            } else {
+                context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
+            }
+        } else {
+            context.challenge(context.form().createForm("login-email-only.ftl"));
+        }
+    }
+
+    private void createAndSendCode(AuthenticationFlowContext context, MultivaluedMap<String, String> formData) {
+        String email = formData.getFirst("email");
+        UserModel user = context.getSession().users().getUserByEmail(email, context.getRealm());
 
         if (user == null) {
-            // Register user
-            user = context.getSession().users().addUser(context.getRealm(), email);
-            user.setEnabled(true);
-            user.setEmail(email);
+            context.failure(AuthenticationFlowError.UNKNOWN_USER);
+        } else {
+            int randomInt = new SecureRandom().nextInt(1000000);
+            String loginCode = String.format("%06d", randomInt);
 
-            // Uncomment the following line to require user to update profile on first login
-            // user.addRequiredAction(UserModel.RequiredAction.UPDATE_PROFILE);
+            context.getAuthenticationSession().setAuthNote("loginCode", loginCode);
+
+            String link = KeycloakUriBuilder.fromUri(context.getRefreshExecutionUrl()).queryParam("loginCode", loginCode).build().toString();
+
+            String body = "<a href=\"" + link + "\">Click to login</a><br/><p>Your code is " + loginCode + "</p>";
+            try {
+                // sendSMS(loginCode);
+                context.getSession().getProvider(EmailSenderProvider.class).send(context.getRealm().getSmtpConfig(), user, "Login link", null, body);
+            } catch (EmailException e) {
+                e.printStackTrace();
+            }
+            context.setUser(user);
+            context.challenge(context.form().createForm("login-sms-code.ftl"));
         }
-
-        String key = KeycloakModelUtils.generateId();
-        //context.getAuthenticationSession().setAuthNote("email-key", key);
-        int randomInt = new SecureRandom().nextInt(1000000);
-        String smsCode = String.format("%06d", randomInt);
-        context.getAuthenticationSession().setAuthNote("sms-key", smsCode);
-
-        //sendSMS(smsCode);
-
-
-        String link = KeycloakUriBuilder.fromUri(context.getRefreshExecutionUrl()).queryParam("key", key).queryParam("sms-key", smsCode).build().toString();
-
-        String body = "<a href=\"" + link + "\">Click to login</a><br/><p>Your code is "  + smsCode + "</p>";
-        try {
-            context.getSession().getProvider(EmailSenderProvider.class).send(context.getRealm().getSmtpConfig(), user, "Login link", null, body);
-        } catch (EmailException e) {
-            e.printStackTrace();
-        }
-
-        context.setUser(user);
-        context.challenge(context.form().createForm("login-sms-code.ftl"));
     }
 
     private void sendSMS(String smsCode) {
@@ -141,7 +143,6 @@ public class MagicLinkFormAuthenticator /*extends AbstractUsernameFormAuthentica
     @Override
     public void close() {
     }
-
 
 
 }

@@ -11,9 +11,9 @@
                     <div class="${properties.kcLabelWrapperClass!}">
                         <label for="email" class="${properties.kcLabelClass!}">${msg("email")}</label>
                     </div>
-
                     <div class="${properties.kcInputWrapperClass!}">
-                        <input tabindex="1" id="email" class="${properties.kcInputClass!}" name="email"  type="text" autofocus autocomplete="off" />
+                        <input tabindex="1" id="email" class="${properties.kcInputClass!}" name="email"  type="email" required autofocus autocomplete="off" />
+                        <input type="hidden" id="form-type" name="form-type" value="USERNAME"/>
                     </div>
                 </div>
 
