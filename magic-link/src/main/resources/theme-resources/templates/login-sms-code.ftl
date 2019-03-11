@@ -13,7 +13,7 @@
                     </div>
 
                     <div class="${properties.kcInputWrapperClass!}">
-                        <input tabindex="1" id="sms-key" class="${properties.kcInputClass!}" name="sms-key"  type="text" autofocus autocomplete="off" />
+                        <input tabindex="1" id="loginCode" class="${properties.kcInputClass!}" name="loginCode"  type="text" autofocus autocomplete="off" />
                         <input type="hidden" id="form-type" name="form-type" value="SMS_LOGIN"/>
                     </div>
                 </div>

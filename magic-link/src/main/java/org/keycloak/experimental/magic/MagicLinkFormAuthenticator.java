@@ -20,6 +20,7 @@ package org.keycloak.experimental.magic;
 import com.twilio.Twilio;
 import com.twilio.rest.api.v2010.account.Message;
 import com.twilio.type.PhoneNumber;
+import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
@@ -42,6 +43,8 @@ import java.security.SecureRandom;
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
 public class MagicLinkFormAuthenticator /*extends AbstractUsernameFormAuthenticator*/ implements Authenticator {
+
+    private static final Logger LOG = Logger.getLogger(MagicLinkFormAuthenticator.class);
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
@@ -97,33 +100,35 @@ public class MagicLinkFormAuthenticator /*extends AbstractUsernameFormAuthentica
             String loginCode = String.format("%06d", randomInt);
 
             context.getAuthenticationSession().setAuthNote("loginCode", loginCode);
-
-            String link = KeycloakUriBuilder.fromUri(context.getRefreshExecutionUrl()).queryParam("loginCode", loginCode).build().toString();
-
-            String body = "<a href=\"" + link + "\">Click to login</a><br/><p>Your code is " + loginCode + "</p>";
             try {
-                // sendSMS(loginCode);
+                if ( user.getFirstAttribute("mobileNumber") != null ) {
+                    sendSMS(loginCode, user.getFirstAttribute("mobileNumber"));
+                } else {
+                    LOG.infov( "User with id %s does not have a mobile number set. Not sending sms code", user.getId() );
+                }
+                String link = KeycloakUriBuilder.fromUri(context.getRefreshExecutionUrl()).queryParam("loginCode", loginCode).build().toString();
+                String body = "<a href=\"" + link + "\">Click to login</a><br/><p>Your code is " + loginCode + "</p>";
+
                 context.getSession().getProvider(EmailSenderProvider.class).send(context.getRealm().getSmtpConfig(), user, "Login link", null, body);
+                context.setUser(user);
+                context.challenge(context.form().createForm("login-sms-code.ftl"));
             } catch (EmailException e) {
-                e.printStackTrace();
+                LOG.error(e);
             }
-            context.setUser(user);
-            context.challenge(context.form().createForm("login-sms-code.ftl"));
         }
     }
 
-    private void sendSMS(String smsCode) {
+    private void sendSMS(String smsCode, String toNumber) {
         String twilioUser = System.getenv("TWILIO_USER");
         String twilioPassword = System.getenv("TWILIO_PASSWORD");
-        // TODO make this dynamic
-        String toNumber = System.getenv("TWILIO_TO");
         String fromNumber = System.getenv("TWILIO_FROM");
-        Twilio.init(twilioUser, twilioPassword);
-        Message sms = Message
-                .creator(new PhoneNumber(toNumber), // to
-                        new PhoneNumber(fromNumber), // from
-                        "Your code: " + smsCode)
-                .create();
+        if ( twilioUser != null && twilioPassword != null && toNumber != null && fromNumber != null ) {
+            Twilio.init(twilioUser, twilioPassword);
+            Message.creator(new PhoneNumber(toNumber), new PhoneNumber(fromNumber),"Your code: " + smsCode).create();
+        } else {
+            LOG.error("Cannot send SMS via twilio. Twilio setup is incomplete, make sure all required properties are set in env");
+        }
+
     }
 
     @Override
